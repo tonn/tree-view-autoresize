@@ -14,6 +14,11 @@ module.exports = TreeViewAutoresize =
       default: 0
       description:
         'Maximum tree-view width. Put 0 if you don\'t want a max limit.'
+    hover:
+      type: 'boolean'
+      default: false
+      description:
+        'Expand the tree-view width when hovering on it, and collapse when you move your mouse off of it'
 
   subscriptions: null
   max: 0
@@ -35,14 +40,13 @@ module.exports = TreeViewAutoresize =
         @resizeNuclideFileTree()
       @subscriptions.add atom.project.onDidChangePaths (=> @resizeNuclideFileTree())
       @resizeNuclideFileTree()
-
     else
       requirePackages('tree-view').then ([treeView]) =>
         @treeView = treeView.treeView
         @treeView.on 'click.autoresize', '.directory', (=> @resizeTreeView())
-        @subscriptions.add atom.project.onDidChangePaths (=> @resizeTreeView())
+        @subscriptions.add atom.workspace.onDidChangeActivePaneItem => @resizeTreeView(true)
         @subscriptions.add atom.commands.add 'atom-workspace',
-          'tree-view:reveal-active-file': => @resizeTreeView()
+          'tree-view:reveal-active-file': => @resizeTreeView(true)
         @subscriptions.add atom.commands.add '.tree-view',
           'tree-view:open-selected-entry': => @resizeTreeView()
           'tree-view:expand-item': => @resizeTreeView()
@@ -55,16 +59,34 @@ module.exports = TreeViewAutoresize =
           'tree-view:toggle-vcs-ignored-files': => @resizeTreeView()
           'tree-view:toggle-ignored-names': => @resizeTreeView()
           'tree-view:remove-project-folder': => @resizeTreeView()
-        @resizeTreeView()
+        @subscriptions.add atom.config.observe 'tree-view-autoresize.hover', (enable) =>
+          @hover(enable)
+          @switched = false
+
 
   deactivate: ->
     @subscriptions.dispose()
+    @hover(false)
     @treeView?.unbind 'click.autoresize'
     $('body').unbind 'click.autoresize'
 
   serialize: ->
 
-  resizeTreeView: ->
+
+  hover: (enable = true) ->
+    if enable
+      unless @switched
+        @treeView.animate {minWidth: @getWidth(20), width: @getWidth(20)}, 200
+        @switched = true
+      @treeView.on 'mouseenter', (=> @resizeTreeView())
+      @treeView.on 'mouseleave', (=> @treeView.animate {width: @getWidth(20)}, 200)
+    else
+      @switched = true
+      @treeView.unbind 'mouseenter mouseleave'
+      @resizeTreeView()
+
+  resizeTreeView: (hoverToggle = false) ->
+    @hover(false) if hoverToggle
     setTimeout =>
       currWidth = @treeView.list.outerWidth()
       if currWidth > @treeView.width()
@@ -76,6 +98,11 @@ module.exports = TreeViewAutoresize =
         @treeView.width currWidth
         @treeView.animate {width: @getWidth(newWidth)}, 200
     , 200
+    if hoverToggle
+      setTimeout =>
+        @switched = false
+        @hover(atom.config.get('tree-view-autoresize.hover'))
+      , 1700
 
   resizeNuclideFileTree: ->
     setTimeout =>
